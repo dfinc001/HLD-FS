@@ -23,4 +23,8 @@ impl StoragePool {
         let used = self.used_bytes.load(std::sync::atomic::Ordering::Relaxed);
         self.total_capacity.saturating_sub(used)
     }
+
+    pub fn add_used(&self, bytes: u64) {
+        self.used_bytes.fetch_add(bytes, std::sync::atomic::Ordering::Relaxed);
+    }
 }

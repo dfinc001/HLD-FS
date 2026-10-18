@@ -6,8 +6,8 @@ use std::sync::Arc;
 use std::time::{Duration, UNIX_EPOCH};
 
 use fuser::{
-    Filesystem, ReplyAttr, ReplyData, ReplyDirectory, ReplyEmpty, ReplyEntry, Request,
-    FileType, MountOption, BackgroundSession,
+    Filesystem, ReplyAttr, ReplyData, ReplyDirectory, ReplyEntry, Request,
+    FileType, MountOption,
 };
 use libc::ENOENT;
 use parking_lot::RwLock;
@@ -17,34 +17,13 @@ mod disk;
 mod error;
 mod log_tier;
 mod metadata;
+mod storage_pool;
 
 use disk::DiskManager;
+use error::{HldFsError, Result};
 use log_tier::LogTier;
 use metadata::{HotMap, ColdMap};
-
-// Simple StoragePool inline definition if not in a separate file
-pub struct StoragePool {
-    total_capacity: u64,
-    used_bytes: AtomicU64,
-}
-
-impl StoragePool {
-    pub fn new(total_capacity: u64) -> Self {
-        Self {
-            total_capacity,
-            used_bytes: AtomicU64::new(0),
-        }
-    }
-
-    pub fn is_safety_valve_tripped(&self) -> bool {
-        let used = self.used_bytes.load(Ordering::Relaxed);
-        (used as f64 / self.total_capacity as f64) >= 0.75
-    }
-
-    pub fn add_used(&self, bytes: u64) {
-        self.used_bytes.fetch_add(bytes, Ordering::Relaxed);
-    }
-}
+use storage_pool::StoragePool;
 
 /// The main HldFs FUSE filesystem structure
 pub struct HldFs {
@@ -112,7 +91,7 @@ impl Filesystem for HldFs {
                         gid: 20,
                         rdev: 0,
                         flags: 0,
-                        safetee: 0,
+                        blksize: 512,
                     };
                     reply.entry(&Duration::from_secs(1), &attr, 0);
                     return;
@@ -140,7 +119,7 @@ impl Filesystem for HldFs {
                 gid: 20,
                 rdev: 0,
                 flags: 0,
-                safetee: 0,
+                blksize: 512,
             };
             reply.attr(&Duration::from_secs(1), &attr);
         } else {
@@ -238,7 +217,7 @@ impl Filesystem for HldFs {
                 gid: 20,
                 rdev: 0,
                 flags: 0,
-                safetee: 0,
+                blksize: 512,
             };
 
             reply.created(&Duration::from_secs(1), &attr, 0, 0, 0);
@@ -266,7 +245,7 @@ impl Filesystem for HldFs {
         ];
 
         let inodes = self.inodes.read();
-        let mut all_entries = entries;
+        let all_entries = entries;
         let dynamic_entries: Vec<(u64, FileType, String)> = inodes
             .iter()
             .filter(|(&k, _)| k != 1)
@@ -297,7 +276,7 @@ impl Filesystem for HldFs {
     }
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
         eprintln!("Usage: {} <MOUNT_POINT>", args[0]);
@@ -330,7 +309,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-// Helper trait/impl extension for DiskManager cloning if needed
 impl DiskManager {
     pub fn clone_arc(this: &Arc<Self>) -> Arc<Self> {
         Arc::clone(this)
