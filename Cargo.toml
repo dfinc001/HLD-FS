@@ -1,0 +1,25 @@
+[package]
+name = "hld-fs"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Async Runtime & Concurrency
+tokio = { version = "1.38", features = ["full"] }
+parking_lot = "0.12"
+crossbeam-channel = "0.5"
+
+# Cryptography & Hashing (for 128KB chunk fingerprinting)
+blake3 = "1.5"
+
+# Error Handling
+thiserror = "1.0"
+
+# Filesystem in Userspace (FUSE) & OS bindings
+fuser = "0.14"
+libc = "0.2"
+
+# Serialization / Zero-copy parsing (optional for metadata snapshots)
+zerocopy = "0.7"
+bincode = "1.3"
+serde = { version = "1.0", features = ["derive"] }
