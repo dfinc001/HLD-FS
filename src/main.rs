@@ -39,6 +39,7 @@ pub struct HldFs {
 
 #[derive(Clone)]
 struct FileMetadata {
+    parent: u64,
     name: String,
     size: u64,
     kind: FileType,
@@ -51,6 +52,7 @@ impl HldFs {
         
         // Initialize root directory (Inode 1)
         inodes.write().insert(1, FileMetadata {
+            parent: 1,
             name: ".".to_string(),
             size: 0,
             kind: FileType::Directory,
@@ -72,30 +74,28 @@ impl HldFs {
 impl Filesystem for HldFs {
     fn lookup(&mut self, _req: &Request<'_>, parent: u64, name: &OsStr, reply: ReplyEntry) {
         let inodes = self.inodes.read();
-        if parent == 1 {
-            let name_str = name.to_string_lossy();
-            for (&ino, meta) in inodes.iter() {
-                if meta.name == name_str {
-                    let attr = fuser::FileAttr {
-                        ino,
-                        size: meta.size,
-                        blocks: (meta.size + 511) / 512,
-                        atime: UNIX_EPOCH,
-                        mtime: UNIX_EPOCH,
-                        ctime: UNIX_EPOCH,
-                        crtime: UNIX_EPOCH,
-                        kind: meta.kind,
-                        perm: meta.perm,
-                        nlink: 1,
-                        uid: 501,
-                        gid: 20,
-                        rdev: 0,
-                        flags: 0,
-                        blksize: 512,
-                    };
-                    reply.entry(&Duration::from_secs(1), &attr, 0);
-                    return;
-                }
+        let name_str = name.to_string_lossy();
+        for (&ino, meta) in inodes.iter() {
+            if meta.parent == parent && meta.name == name_str {
+                let attr = fuser::FileAttr {
+                    ino,
+                    size: meta.size,
+                    blocks: (meta.size + 511) / 512,
+                    atime: UNIX_EPOCH,
+                    mtime: UNIX_EPOCH,
+                    ctime: UNIX_EPOCH,
+                    crtime: UNIX_EPOCH,
+                    kind: meta.kind,
+                    perm: meta.perm,
+                    nlink: if meta.kind == FileType::Directory { 2 } else { 1 },
+                    uid: 501,
+                    gid: 20,
+                    rdev: 0,
+                    flags: 0,
+                    blksize: 512,
+                };
+                reply.entry(&Duration::from_secs(1), &attr, 0);
+                return;
             }
         }
         reply.error(ENOENT);
@@ -195,6 +195,7 @@ impl Filesystem for HldFs {
             {
                 let mut inodes = self.inodes.write();
                 inodes.insert(ino, FileMetadata {
+                    parent: parent,
                     name: name_str,
                     size: 0,
                     kind: FileType::RegularFile,
@@ -318,6 +319,7 @@ impl Filesystem for HldFs {
         let new_ino = inodes.keys().max().copied().unwrap_or(1) + 1;
 
         let meta = FileMetadata {
+            parent: parent,
             name: name_str,
             size: 0,
             kind: fuser::FileType::Directory,
@@ -383,9 +385,18 @@ impl Filesystem for HldFs {
         offset: i64,
         mut reply: ReplyDirectory,
     ) {
+        let inodes = self.inodes.read();
+        // Check if the directory exists (either root ino 1, or exists in inodes and is a Directory)
         if ino != 1 {
-            reply.error(ENOENT);
-            return;
+            if let Some(meta) = inodes.get(&ino) {
+                if meta.kind != fuser::FileType::Directory {
+                    reply.error(libc::ENOTDIR);
+                    return;
+                }
+            } else {
+                reply.error(ENOENT);
+                return;
+            }
         }
 
         let entries = vec![
@@ -397,7 +408,7 @@ impl Filesystem for HldFs {
         let all_entries = entries;
         let dynamic_entries: Vec<(u64, FileType, String)> = inodes
             .iter()
-            .filter(|(&k, _)| k != 1)
+            .filter(|(&_k, v)| v.parent == ino)
             .map(|(&k, v)| (k, v.kind, v.name.clone()))
             .collect();
 
