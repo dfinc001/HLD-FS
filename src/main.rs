@@ -226,6 +226,56 @@ impl Filesystem for HldFs {
         }
     }
 
+    fn setattr(
+        &mut self,
+        _req: &Request<'_>,
+        ino: u64,
+        mode: Option<u32>,
+        uid: Option<u32>,
+        gid: Option<u32>,
+        size: Option<u64>,
+        _atime: Option<fuser::TimeOrNow>,
+        _mtime: Option<fuser::TimeOrNow>,
+        _ctime: Option<std::time::SystemTime>,
+        _fh: Option<u64>,
+        _crtime: Option<std::time::SystemTime>,
+        _chgtime: Option<std::time::SystemTime>,
+        _bkuptime: Option<std::time::SystemTime>,
+        _flags: Option<u32>,
+        reply: ReplyAttr,
+    ) {
+        let mut inodes = self.inodes.write();
+        if let Some(meta) = inodes.get_mut(&ino) {
+            if let Some(s) = size {
+                meta.size = s;
+            }
+            if let Some(m) = mode {
+                meta.perm = m as u16;
+            }
+
+            let attr = fuser::FileAttr {
+                ino,
+                size: meta.size,
+                blocks: (meta.size + 511) / 512,
+                atime: UNIX_EPOCH,
+                mtime: UNIX_EPOCH,
+                ctime: UNIX_EPOCH,
+                crtime: UNIX_EPOCH,
+                kind: meta.kind,
+                perm: meta.perm,
+                nlink: 1,
+                uid: uid.unwrap_or(501),
+                gid: gid.unwrap_or(20),
+                rdev: 0,
+                flags: 0,
+                blksize: 512,
+            };
+            reply.attr(&Duration::from_secs(1), &attr);
+        } else {
+            reply.error(ENOENT);
+        }
+    }
+
     fn readdir(
         &mut self,
         _req: &Request<'_>,
