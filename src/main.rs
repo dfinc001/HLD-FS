@@ -276,6 +276,34 @@ impl Filesystem for HldFs {
         }
     }
 
+    fn unlink(
+        &mut self,
+        _req: &Request<'_>,
+        parent: u64,
+        name: &OsStr,
+        reply: fuser::ReplyEmpty,
+    ) {
+        if parent == 1 {
+            let name_str = name.to_string_lossy();
+            let mut inodes = self.inodes.write();
+            let mut found_ino = None;
+
+            for (&ino, meta) in inodes.iter() {
+                if meta.name == name_str {
+                    found_ino = Some(ino);
+                    break;
+                }
+            }
+
+            if let Some(ino) = found_ino {
+                inodes.remove(&ino);
+                reply.ok();
+                return;
+            }
+        }
+        reply.error(ENOENT);
+    }
+
     fn readdir(
         &mut self,
         _req: &Request<'_>,
