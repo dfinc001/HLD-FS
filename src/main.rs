@@ -304,6 +304,49 @@ impl Filesystem for HldFs {
         reply.error(ENOENT);
     }
 
+    fn mkdir(
+        &mut self,
+        _req: &Request<'_>,
+        parent: u64,
+        name: &OsStr,
+        mode: u32,
+        _umask: u32,
+        reply: ReplyEntry,
+    ) {
+        let name_str = name.to_string_lossy().into_owned();
+        let mut inodes = self.inodes.write();
+        let new_ino = inodes.keys().max().copied().unwrap_or(1) + 1;
+
+        let meta = FileMetadata {
+            name: name_str,
+            size: 0,
+            kind: fuser::FileType::Directory,
+            perm: (mode & 0xFFFF) as u16,
+        };
+
+        inodes.insert(new_ino, meta);
+
+        let attr = fuser::FileAttr {
+            ino: new_ino,
+            size: 0,
+            blocks: 0,
+            atime: UNIX_EPOCH,
+            mtime: UNIX_EPOCH,
+            ctime: UNIX_EPOCH,
+            crtime: UNIX_EPOCH,
+            kind: fuser::FileType::Directory,
+            perm: (mode & 0xFFFF) as u16,
+            nlink: 2,
+            uid: 501,
+            gid: 20,
+            rdev: 0,
+            flags: 0,
+            blksize: 512,
+        };
+
+        reply.entry(&Duration::from_secs(1), &attr, 0);
+    }
+
     fn readdir(
         &mut self,
         _req: &Request<'_>,
