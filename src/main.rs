@@ -1,3 +1,5 @@
+mod dedup_engine;
+use dedup_engine::DedupWorker;
 use std::time::{Duration, SystemTime};
 use std::collections::HashMap;
 use std::env;
@@ -138,9 +140,17 @@ impl Filesystem for HldFs {
         _lock_owner: Option<u64>,
         reply: ReplyData,
     ) {
+        println!("[HLD-FS Debug] read() called: ino={}, offset={}, size={}", ino, offset, size);
         let hot_entry = self.hot_map.get(ino);
+        println!("[HLD-FS Debug] hot_map.get({}) result present: {}", ino, hot_entry.is_some());
         if let Some(entry) = hot_entry {
-            let mut buf = vec![0u8; size as usize];
+            if offset as u64 >= entry.length {
+                reply.data(&[]);
+                return;
+            }
+            let available = entry.length - offset as u64;
+            let read_size = std::cmp::min(size as u64, available) as usize;
+            let mut buf = vec![0u8; read_size];
             let read_offset = entry.log_offset + offset as u64;
             if self.log_tier.read_log(read_offset, &mut buf).is_ok() {
                 reply.data(&buf);
@@ -162,6 +172,7 @@ impl Filesystem for HldFs {
         _lock_owner: Option<u64>,
         reply: fuser::ReplyWrite,
     ) {
+        println!("[HLD-FS Debug] write() called: ino={}, offset={}, data_len={}", ino, offset, data.len());
         match self.log_tier.append(data) {
             Ok(log_offset) => {
                 self.hot_map.insert(ino, log_offset, data.len() as u64);
@@ -455,9 +466,27 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let log_tier = Arc::new(LogTier::new(DiskManager::clone_arc(&disk), Arc::clone(&storage_pool), 0, capacity / 2));
 
     // 3. Setup Filesystem
-    let fs = HldFs::new(disk, storage_pool, log_tier);
+    let fs = HldFs::new(disk.clone(), storage_pool.clone(), log_tier.clone());
 
-    // 4. Configure FUSE mount options
+    // 4. Spawn background DedupWorker using an explicit Tokio Runtime
+    let rt = tokio::runtime::Runtime::new()?;
+    let metadata = std::sync::Arc::new(crate::metadata::DualMapMetadata {
+        hot_map: fs.hot_map.clone(),
+        cold_map: fs.cold_map.clone(),
+    });
+    let dedup_worker = DedupWorker::new(
+        storage_pool.clone(),
+        metadata,
+        disk.clone(),
+    );
+    rt.spawn(async move {
+        dedup_worker.run_background_loop().await;
+    });
+    // Keep the runtime alive in the background
+    std::mem::forget(rt);
+    println!("[HLD-FS] Background DedupWorker spawned successfully.");
+
+    // 5. Configure FUSE mount options
     let options = vec![
         MountOption::RW,
         MountOption::FSName("hldfs".to_string()),
