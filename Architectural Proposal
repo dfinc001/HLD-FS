@@ -1,0 +1,47 @@
+# Architectural Proposal: Hybrid Log-Structured Deduplicating File System (HLD-FS)
+
+## 1. Executive Summary
+
+The Hybrid Log-Structured Deduplicating File System (HLD-FS) is a high-performance storage architecture designed to solve the classic trade-off between **blazing-fast write ingestion** and **long-term storage efficiency**.
+
+By utilizing a dual-map metadata system, HLD-FS handles incoming writes via a fast, sequential log structure for "hot" data, while asynchronously transitioning "cold" data into a verified, 128KB chunk-level deduplicated storage pool during idle system periods. To ensure system stability and prevent compaction deadlocks, background deduplication features an automated safety valve that halts at **75% storage utilization**.
+
+---
+
+## 2. Core Architecture & Design
+
+### A. The Dual-Map Metadata System
+
+HLD-FS decouples the user-facing file layout from physical disk organization using two distinct maps:
+
+1. **The Log-Structure Map (Hot Tier):** Tracks active, recently modified files and incoming writes as sequential append-only logs. This eliminates random write penalties and provides maximum throughput.
+2. **The Chunk-Addressable Map (Cold Tier):** Tracks immutable, deduplicated 128KB chunks. When files cool down, they are translated from the log structure into cryptographic-hash-indexed references pointing to unique chunks.
+
+### B. Data Lifecycle (Hot to Cold Migration)
+
+* **Phase 1: Ingestion (Hot Data):** All new writes land sequentially in the append-only log. No inline hashing or deduplication math is performed, ensuring zero write-path latency penalty.
+* **Phase 2: Idle Detection & Aging:** When system activity drops below a defined threshold and files remain unmodified for a set age, a background worker flags them for processing.
+* **Phase 3: Chunking & Verification:** The background engine splits the cold data into fixed **128KB blocks**, generates a cryptographic fingerprint (e.g., BLAKE3), verifies uniqueness, and writes new unique blocks to the deduplicated pool while updating the secondary map.
+
+### C. The 75% Utilization Safety Valve
+
+To prevent the storage system from choking on its own compaction math, **background deduplication automatically pauses when physical disk utilization reaches 75%**.
+
+* **The Benefit:** This guarantees a 25% safety runway. The system retains the free space required to write new logs, perform garbage collection, and absorb traffic spikes without risking out-of-space deadlocks.
+
+---
+
+## 3. Recommended Programming Language: Rust
+
+The design goals of HLD-FS—low-latency sequential writes, complex background asynchronous tasks, thread-safe memory sharing, and zero tolerance for data corruption—make **Rust** the optimal programming language for this project.
+
+### Why Rust Fits This Architecture Perfectly:
+
+* **Fearless Concurrency (The Clean-Up Thread Problem):**
+Log-structured file systems require background worker threads (cleaners and deduplicators) running concurrently with front-end user write operations. Rust's strict ownership model and `Send`/`Sync` guarantees make data races structurally impossible at compile time, allowing safe data sharing between the hot log writer and the background chunk processor without heavy garbage collection pauses.
+* **Zero-Cost Memory Safety:**
+File systems parse raw bytes from storage blocks into structures. In C or C++, this frequently leads to catastrophic buffer overflows or undefined behavior. Rust allows safe, zero-cost zero-copy binary parsing (via crates like `zerocopy`), ensuring that disk corruption never compromises host memory safety.
+* **High-Performance Systems Integration:**
+Rust matches C and C++ performance down to the metal, allowing direct interaction with block devices, asynchronous I/O (`tokio` or `io_uring`), and user-space file system layers (via `fuser` or `fuse3`).
+* **Predictable Latency:**
+Unlike Go or Java, Rust has no garbage collector. This ensures that the hot-tier log writer maintains consistent, sub-millisecond write latencies without unexpected execution pauses.
