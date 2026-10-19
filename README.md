@@ -19,25 +19,25 @@ HLD-FS is a high-performance, experimental tiered file system written in Rust us
 ## Building & Running
 
 ### 1. Build the Release Binary
-\`\`\`bash
+```bash
 cargo build --release
-\`\`\`
+```
 
 ### 2. Run as a Background Daemon (Production / Container Mode)
-\`\`\`bash
+```bash
 umount -l /mnt/my_hldfs 2>/dev/null || true
 mkdir -p /mnt/my_hldfs
 nohup ./target/release/hld-fs /mnt/my_hldfs > /root/hld-fs.log 2>&1 &
-\`\`\`
+```
 
 ### 3. Interactive Development Mode (Foreground)
 If you want to view live debug logs directly in your terminal:
-\`\`\`bash
+```bash
 cargo run -- /mnt/my_hldfs
-\`\`\`
+```
 
 ### 4. Testing the Filesystem
 In another terminal or session, write and read files:
-\`\`\`bash
+```bash
 echo "Hello HLD-FS" > /mnt/my_hldfs/test.txt && cat /mnt/my_hldfs/test.txt
-\`\`\`
+```
