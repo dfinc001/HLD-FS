@@ -17,6 +17,14 @@ impl StoragePool {
         }
     }
 
+    pub fn total_capacity(&self) -> u64 {
+        self.total_capacity
+    }
+
+    pub fn used_bytes(&self) -> u64 {
+        self.used_bytes.load(Ordering::Relaxed)
+    }
+
     pub fn is_safety_valve_tripped(&self) -> bool {
         let used = self.used_bytes.load(Ordering::Relaxed);
         (used as f64 / self.total_capacity as f64) >= 0.75

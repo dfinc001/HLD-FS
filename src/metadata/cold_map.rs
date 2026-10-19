@@ -19,6 +19,25 @@ pub struct ColdMap {
 }
 
 impl ColdMap {
+    /// Computes deduplication ratio: logical bytes represented vs physical unique bytes stored.
+    pub fn dedup_ratio(&self) -> f64 {
+        let file_guard = self.file_chunks.read();
+        let index_guard = self.chunk_index.read();
+
+        let mut total_logical_chunks = 0u64;
+        for entry in file_guard.values() {
+            total_logical_chunks += entry.chunk_hashes.len() as u64;
+        }
+
+        let total_unique_chunks = index_guard.len() as u64;
+
+        if total_unique_chunks == 0 {
+            return 1.0;
+        }
+
+        total_logical_chunks as f64 / total_unique_chunks as f64
+    }
+
     pub fn new() -> Self {
         Self {
             file_chunks: RwLock::new(HashMap::new()),
@@ -29,6 +48,11 @@ impl ColdMap {
     pub fn insert_file_chunks(&self, inode: u64, chunk_hashes: Vec<[u8; 32]>) {
         let mut guard = self.file_chunks.write();
         guard.insert(inode, ColdFileEntry { chunk_hashes });
+    }
+
+    pub fn remove_file_chunks(&self, inode: u64) -> Option<Vec<[u8; 32]>> {
+        let mut guard = self.file_chunks.write();
+        guard.remove(&inode).map(|entry| entry.chunk_hashes)
     }
 
     pub fn get_file_chunks(&self, inode: u64) -> Option<Vec<[u8; 32]>> {

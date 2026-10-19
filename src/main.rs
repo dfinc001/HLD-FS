@@ -309,6 +309,15 @@ impl Filesystem for HldFs {
 
             if let Some(ino) = found_ino {
                 inodes.remove(&ino);
+                
+                // Garbage Collection: Clean up HotMap and ColdMap
+                self.hot_map.remove(ino);
+                if let Some(hashes) = self.cold_map.remove_file_chunks(ino) {
+                    for hash in hashes {
+                        self.cold_map.deref_chunk(&hash);
+                    }
+                }
+
                 reply.ok();
                 return;
             }
@@ -381,6 +390,15 @@ impl Filesystem for HldFs {
 
             if let Some(ino) = found_ino {
                 inodes.remove(&ino);
+                
+                // Garbage Collection: Clean up HotMap and ColdMap
+                self.hot_map.remove(ino);
+                if let Some(hashes) = self.cold_map.remove_file_chunks(ino) {
+                    for hash in hashes {
+                        self.cold_map.deref_chunk(&hash);
+                    }
+                }
+
                 reply.ok();
                 return;
             }
