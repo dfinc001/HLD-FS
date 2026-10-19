@@ -109,3 +109,42 @@ impl ColdMap {
         *self.chunk_index.write() = chunk_index;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_cold_map_dedup_and_gc() {
+        let cold_map = ColdMap::new();
+        assert_eq!(cold_map.dedup_ratio(), 1.0);
+
+        let ino = 123;
+        let h1 = [1u8; 32];
+        let h2 = [2u8; 32];
+        
+        cold_map.register_chunk(h1, 0);
+        cold_map.register_chunk(h2, 1024);
+        cold_map.insert_file_chunks(ino, vec![h1, h2]);
+
+        // 2 logical chunks, 2 unique chunks -> ratio 1.0
+        assert_eq!(cold_map.dedup_ratio(), 1.0);
+
+        // Simulate another file pointing to h1 (deduplication)
+        let ino2 = 124;
+        cold_map.register_chunk(h1, 0); // Increments ref count
+        cold_map.insert_file_chunks(ino2, vec![h1]);
+        
+        // 3 logical chunks, 2 unique chunks -> ratio 1.5
+        assert_eq!(cold_map.dedup_ratio(), 1.5);
+
+        // Test unlinking file 2
+        if let Some(removed_hashes) = cold_map.remove_file_chunks(ino2) {
+            for h in removed_hashes {
+                cold_map.deref_chunk(&h);
+            }
+        }
+        // Back to 2 logical chunks, 2 unique chunks -> ratio 1.0
+        assert_eq!(cold_map.dedup_ratio(), 1.0);
+    }
+}

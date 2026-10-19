@@ -48,3 +48,24 @@ impl StoragePool {
         Ok(offset)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_storage_pool_metrics() {
+        let pool = StoragePool::new(2048);
+        assert_eq!(pool.total_capacity(), 2048);
+        assert_eq!(pool.used_bytes(), 0);
+        assert_eq!(pool.available_space(), 2048);
+
+        pool.add_used(512);
+        assert_eq!(pool.used_bytes(), 512);
+        assert_eq!(pool.available_space(), 1536);
+        assert!(!pool.is_safety_valve_tripped());
+
+        pool.add_used(1100); // 1612 / 2048 = ~78.7% > 75%
+        assert!(pool.is_safety_valve_tripped());
+    }
+}
