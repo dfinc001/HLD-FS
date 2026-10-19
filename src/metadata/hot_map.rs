@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 use parking_lot::RwLock;
+use serde::{Serialize, Deserialize};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct HotFileEntry {
     pub log_offset: u64,
     pub length: u64,
@@ -36,6 +37,11 @@ impl HotMap {
     pub fn snapshot(&self) -> Vec<(u64, HotFileEntry)> {
         let guard = self.entries.read();
         guard.iter().map(|(&k, &v)| (k, v)).collect()
+    }
+
+    pub fn restore(&self, entries: HashMap<u64, HotFileEntry>) {
+        let mut guard = self.entries.write();
+        *guard = entries;
     }
 
     pub fn len(&self) -> usize {
