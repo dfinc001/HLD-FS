@@ -1,5 +1,6 @@
 use std::fs::{File, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom, Write};
+use std::os::unix::io::AsRawFd;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -18,6 +19,16 @@ impl DiskManager {
             .create(true)
             .open(path)?;
 
+        // Acquire an exclusive advisory lock at the kernel level.
+        // LOCK_EX = Exclusive lock, LOCK_NB = Non-blocking (fail immediately if already locked)
+        let lock_result = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
+        if lock_result != 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::AddrInUse,
+                "Failed to acquire exclusive lock on backing disk image. Is HLD-FS already mounted using this image?",
+            ));
+        }
+
         file.set_len(capacity)?;
 
         Ok(Self {
@@ -27,7 +38,7 @@ impl DiskManager {
     }
 
     pub fn resize(&self, new_capacity: u64) -> io::Result<()> {
-        let mut file = self.file.lock();
+        let file = self.file.lock();
         file.set_len(new_capacity)?;
         self.capacity.store(new_capacity, Ordering::SeqCst);
         Ok(())
