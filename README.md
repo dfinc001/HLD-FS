@@ -15,9 +15,22 @@ HLD-FS is an experimental tiered filesystem written in Rust using FUSE. It combi
   - Linux: `libfuse-dev` and a FUSE-enabled environment
   - macOS: macFUSE
 
-## Build
+## Build and Install
 
-    cargo build --release
+```bash
+# Install Git and Rust/Cargo using your system package manager,
+# or install Rust from https://rustup.rs/
+git clone https://github.com/dfinc001/HLD-FS.git
+cd HLD-FS
+cargo build --release
+sudo install -m 755 target/release/hld-fs /usr/bin/hld-fs
+```
+
+After installation, run it with:
+
+```bash
+sudo hld-fs /mnt/my_hldfs
+```
 
 ## Run
 
