@@ -11,3 +11,4 @@
 - [ ] **Metadata Persistence & Checkpointing**: Serialize and persist `HotMap` and `ColdMap` states to disk for durability across reboots.
 - [ ] **Garbage Collection & Reference Counting**: Implement reference decrementing and space reclamation when files referencing shared cold chunks are deleted.
 - [ ] **Storage Pool Monitoring**: Expose real-time storage metrics (capacity, used bytes, space saved via deduplication) via administrative endpoints or logs.
+
